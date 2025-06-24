@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <title>Visor inundaciones Valencia</title>
+    <script src="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.css" rel="stylesheet" />
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; } 
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(255, 255, 255, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+        }
+        #controls label {
+            display: block;
+            margin-bottom: 4px;
+            cursor: pointer;
+        }
+        fieldset {
+            margin-bottom: 15px;
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        legend {
+            font-weight: bold;
+            padding: 0 5px;
+        }
+        .legend-image {
+            max-width: 100%;
+            display: none;
+            margin-top: 5px;
+        }
+        #legend-container {
+            position: absolute;
+            bottom: 30px;
+            right: 10px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            display: none;
+            min-width: 200px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+        }
+        .legend-color {
+            width: 24px;
+            height: 24px;
+            margin-right: 10px;
+            border: 1px solid #666;
+        }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+<div id="controls">
+  <button id="minimizeLayersPanel" title="Minimizar panel de capas" style="
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 2;
+    background: white;
+    border: 1px solid #888;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.10);
+  ">–</button>
+  <fieldset>
+    <legend>Capas Base</legend>
+    <label><input type="checkbox" id="pnoaLayerCheckbox" checked> Ortofoto (PNOA)</label>
+    <label><input type="checkbox" id="osmLayerCheckbox"> OpenStreetMap (OSM)</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Límites Administrativos</legend>
+    <label><input type="checkbox" id="limitesMunicipalesLayer"> Límites Municipales</label>
+    <label><input type="checkbox" id="limitesProvincialesLayer"> Límites Provinciales</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Láminas de riesgo de Inundación</legend>
+    <label><input type="checkbox" id="inundacionesLayer10"> Láminas q10</label>
+    <label><input type="checkbox" id="inundacionesLayer50"> Láminas q50</label>
+    <label><input type="checkbox" id="inundacionesLayer"> Láminas q100</label>
+    <label><input type="checkbox" id="inundacionesLayer500"> Láminas q500</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Inundaciones 2024</legend>
+    <label><input type="checkbox" id="inundaciones2024Layer"> Inundaciones 2024 </label>
+    <img id="leyendaInundaciones2024" src="https://dana2024.upvusig.car.upv.es/geoserver/dana/wms?REQUEST=GetLegendGraphic&VERSION=1.1.1&FORMAT=image/png&LAYER=H_lamina&STYLE=H_lamina" class="legend-image" alt="Leyenda Inundaciones 2024">
+  </fieldset>
+
+  <fieldset>
+    <legend>Índice de Vulnerabilidad Social</legend>
+    <label><input type="checkbox" id="vulnerabilidadEdificios3D"> Vulnerabilidad Social</label>
+  </fieldset>
+</div>
+  
+<div id="legend-container">
+    <fieldset>
+        <legend>Leyenda - Inundaciones 2024</legend>
+        <div class="legend-content">
+            <img id="wmsLegend" 
+                 src="http://localhost:3000/proxy/geoserver/dana/wms?REQUEST=GetLegendGraphic&VERSION=1.1.1&FORMAT=image/png&LAYER=H_lamina&LEGEND_OPTIONS=fontName:Arial;fontSize:12;fontAntiAliasing:true;forceLabels:on" 
+                 alt="Leyenda WMS"
+                 style="max-width: 100%;">
+        </div>
+        <div style="font-size: 12px; margin-top: 8px; color: #666;">
+            Fuente: CGAT (Universitat Politècnica de València)
+        </div>
+    </fieldset>
+</div>
+
+<div id="legend-ivs" style="display:none;
+  position: absolute;
+  bottom: 30px;
+  left: 10px;
+  background: rgba(255,255,255,0.95);
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  padding: 12px 18px;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  z-index: 10;
+">
+  <b>Leyenda - Índice de Vulnerabilidad Social</b>
+  <div style="margin-top: 8px;">
+    <div style="display: flex; align-items: center; margin-bottom: 4px;">
+      <span style="display:inline-block;width:22px;height:22px;background:#0000FF;border:1px solid #888;margin-right:8px;"></span>
+      Muy baja
+    </div>
+    <div style="display: flex; align-items: center; margin-bottom: 4px;">
+      <span style="display:inline-block;width:22px;height:22px;background:#90EE90;border:1px solid #888;margin-right:8px;"></span>
+      Baja
+    </div>
+    <div style="display: flex; align-items: center; margin-bottom: 4px;">
+      <span style="display:inline-block;width:22px;height:22px;background:#FFFF00;border:1px solid #888;margin-right:8px;"></span>
+      Moderada
+    </div>
+    <div style="display: flex; align-items: center; margin-bottom: 4px;">
+      <span style="display:inline-block;width:22px;height:22px;background:#FFA500;border:1px solid #888;margin-right:8px;"></span>
+      Alta
+    </div>
+    <div style="display: flex; align-items: center; margin-bottom: 4px;">
+      <span style="display:inline-block;width:22px;height:22px;background:#FF0000;border:1px solid #888;margin-right:8px;"></span>
+      Muy alta
+    </div>
+    <div style="display: flex; align-items: center;">
+      <span style="display:inline-block;width:22px;height:22px;background:#808080;border:1px solid #888;margin-right:8px;"></span>
+      Sin datos
+    </div>
+  </div>
+</div>
+
+<div id="legend-laminas" style="
+  position: absolute;
+  bottom: 30px;
+  right: 10px;
+  background: rgba(255,255,255,0.95);
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+  padding: 12px 18px;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  z-index: 10;
+  display: none;
+">
+  <b>Leyenda - Láminas de riesgo de inundación</b>
+  <div style="margin-top: 8px;">
+    <div style="display: flex; align-items: center; margin-bottom: 4px;">
+      <span style="display:inline-block;width:22px;height:22px;background:#00FF00;border:1px solid #888;margin-right:8px;"></span>
+      Lámina q10
+    </div>
+    <div style="display: flex; align-items: center; margin-bottom: 4px;">
+      <span style="display:inline-block;width:22px;height:22px;background:#FFFF00;border:1px solid #888;margin-right:8px;"></span>
+      Lámina q50
+    </div>
+    <div style="display: flex; align-items: center; margin-bottom: 4px;">
+      <span style="display:inline-block;width:22px;height:22px;background:#FF0000;border:1px solid #888;margin-right:8px;"></span>
+      Lámina q100
+    </div>
+    <div style="display: flex; align-items: center;">
+      <span style="display:inline-block;width:22px;height:22px;background:#0000FF;border:1px solid #888;margin-right:8px;"></span>
+      Lámina q500
+    </div>
+  </div>
+</div>
+
+<script>
+    class Edificios3DControl {
+        onAdd(map) {
+            this._map = map;
+            this._btn = document.createElement('button');
+            this._btn.type = 'button';
+            this._btn.title = 'Mostrar/Ocultar edificios 3D';
+            this._btn.style.cssText = `
+                background: white;
+                border: none;
+                border-radius: 4px;
+                width: 34px;
+                height: 34px;
+                cursor: pointer;
+                font-size: 22px;
+                margin: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+            this._btn.innerHTML = '🏢';
+            this._visible = true;
+            this._btn.onclick = () => {
+                this._visible = !this._visible;
+                map.setLayoutProperty('edificios3d-layer', 'visibility', this._visible ? 'visible' : 'none');
+                this._btn.innerHTML = this._visible ? '🏢' : '🚫';
+            };
+            const container = document.createElement('div');
+            container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+            container.appendChild(this._btn);
+            return container;
+        }
+        onRemove() {
+            this._btn.parentNode.remove();
+            this._map = undefined;
+        }
+    }
+
+    var map = new maplibregl.Map({
+        container: 'map',
+        style: {
+            version: 8,
+            sources: {
+                'pnoa': {
+                    type: 'raster',
+                    tiles: [
+                        'https://www.ign.es/wmts/pnoa-ma?layer=OI.OrthoimageCoverage&style=default&tilematrixset=GoogleMapsCompatible&Service=WMTS&Request=GetTile&Version=1.0.0&Format=image/jpeg&TileMatrix={z}&TileCol={x}&TileRow={y}'
+                    ],
+                    tileSize: 256,
+                    attribution: '© Instituto Geográfico Nacional de España'
+                },
+                'terrainSource': {
+                    type: 'raster-dem',
+                    tiles: ["https://xyz-mdt.idee.es/1.0.0/raster-dem/{z}/{x}/{y}.png"],
+                    tileSize: 256,
+                    maxzoom: 15
+                },
+                'hillshadeSource': {
+                    type: 'raster-dem',
+                    tiles: ["https://xyz-mdt.idee.es/1.0.0/raster-dem/{z}/{x}/{y}.png"],
+                    tileSize: 256,
+                    maxzoom: 15
+                },
+                'buildings': {
+                    type: 'vector',
+                    tiles: [
+                        'https://tiles.stadiamaps.com/data/openmaptiles/{z}/{x}/{y}.pbf'
+                    ],
+                    maxzoom: 14,
+                    attribution: '© OpenStreetMap contributors'
+                }
+            },
+            glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+            layers: [
+                {
+                    id: 'pnoa-layer',
+                    type: 'raster',
+                    source: 'pnoa',
+                    minzoom: 0,
+                    maxzoom: 19,
+                    layout: { visibility: 'visible' }
+                },
+                {
+                    id: 'hills',
+                    type: 'hillshade',
+                    source: 'hillshadeSource',
+                    layout: {visibility: 'visible'},
+                    paint: {'hillshade-shadow-color': '#473B24'}
+                }
+            ],
+            sky: {},
+            terrain: {
+                source: 'terrainSource',
+                exaggeration: 1
+            }
+        },
+        center: [-0.398846,39.406071],
+        zoom: 17,
+        pitch: 45,
+        bearing: 0,
+        maxZoom: 22,
+        maxPitch: 85
+    });
+
+    map.addControl(new maplibregl.NavigationControl({
+        visualizePitch: true,
+        showZoom: true,
+        showCompass: true
+    }), 'top-right');
+
+    map.addControl(
+        new maplibregl.TerrainControl({
+            source: 'terrainSource',
+            exaggeration: 1
+        })
+    );
+
+    map.on('load', function () {
+        // Capa OpenStreetMap (OSM) 
+        map.addSource('osm-raster-source', {
+            type: "raster",
+            tiles: [
+                "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+            ],
+            tileSize: 256,
+            attribution: "https://github.com/gravitystorm/openstreetmap-carto/"
+        });
+        map.addLayer({
+            id: "osm-raster-layer",
+            type: "raster",
+            source: "osm-raster-source",
+            layout: { visibility: 'none' }  // Oculta al inicio
+        });
+
+        // Limites municipales
+        map.addSource('limites-municipales', {
+            type: "geojson",
+            data: "ca_municipios2.geojson"
+        });
+        map.addLayer({
+            id: "limites-municipales-layer",
+            type: "line",
+            source: "limites-municipales",
+            layout: { visibility: 'none', "line-join": "round", "line-cap": "round" },
+            paint: {
+                "line-color": "#FF0000",
+                "line-width": 2
+            }
+        });
+        map.addLayer({
+            id: "municipios-labels",
+            type: "symbol",
+            source: "limites-municipales",
+            layout: {
+                "visibility": 'visible',
+                "text-field": "{NOMBRE}",
+                "text-size": 12,
+                "text-anchor": "center",
+                "text-allow-overlap": true
+            },
+            paint: {
+                "text-color": "#000000"
+            }
+        });
+
+        // Limites provinciales
+        map.addSource('limites-provinciales', {
+            type: "geojson",
+            data: "provinciales.geojson"
+        });
+        map.addLayer({
+            id: "limites-provinciales-layer",
+            type: "line",
+            source: "limites-provinciales",
+            layout: { visibility: 'none', "line-join": "round", "line-cap": "round" },
+            paint: {
+                "line-color": "#0000FF",
+                "line-width": 2
+            }
+        });
+        map.addLayer({
+            id: "provinciales-labels",
+            type: "symbol",
+            source: "limites-provinciales",
+            layout: {
+                visibility: 'none',
+                "text-field": "{NAMEUNIT}",
+                "text-size": 12,
+                "text-anchor": "center",
+                "text-allow-overlap": true
+            },
+            paint: {
+                "text-color": "#0000FF"
+            }
+        });
+
+        // Inundaciones q100
+        map.addSource('inundacionesq100', {
+            type: "geojson",
+            data: "laminasq100.geojson"
+        });
+        map.addLayer({
+            id: "inundacionesq100-layer",
+            type: "fill",
+            source: "inundacionesq100",
+            layout: { visibility: 'none' },
+            paint: {
+                "fill-color": "#FF0000",
+                "fill-opacity": 0.3
+            }
+        });
+
+        // Inundaciones q10
+        map.addSource('inundacionesq10', {
+            type: "geojson",
+            data: "laminasq10.geojson"
+        });
+        map.addLayer({
+            id: "inundacionesq10-layer",
+            type: "fill",
+            source: "inundacionesq10",
+            layout: { visibility: 'none' },
+            paint: {
+                "fill-color": "#00FF00",
+                "fill-opacity": 0.5
+            }
+        });
+
+        // Inundaciones q50
+        map.addSource('inundacionesq50', {
+            type: "geojson",
+            data: "laminasq50.geojson"
+        });
+        map.addLayer({
+            id: "inundacionesq50-layer",
+            type: "fill",
+            source: "inundacionesq50",
+            layout: { visibility: 'none' },
+            paint: {
+                "fill-color": "#FFFF00",
+                "fill-opacity": 0.5
+            }
+        });
+
+        // Inundaciones q500
+        map.addSource('inundacionesq500', {
+            type: "geojson",
+            data: "laminasq500.geojson"
+        });
+        map.addLayer({
+            id: "inundacionesq500-layer",
+            type: "fill",
+            source: "inundacionesq500",
+            layout: { visibility: 'none' },
+            paint: {
+                "fill-color": "#0000FF",
+                "fill-opacity": 0.5
+            }
+        });
+
+        // Capa inundaciones 2024 WMS 
+        map.addSource('inundaciones2024', {
+            'type': 'raster',
+            'tiles': [
+                'http://localhost:3000/proxy/geoserver/dana/wms?bbox={bbox-epsg-3857}&format=image/png&service=WMS&version=1.1.1&request=GetMap&srs=EPSG:3857&transparent=true&width=256&height=256&layers=H_lamina'
+            ],
+            'tileSize': 256
+        });
+
+        map.addLayer({
+            'id': 'inundaciones2024-layer',
+            'type': 'raster',
+            'source': 'inundaciones2024',
+            'paint': {
+                'raster-opacity': 0.7
+            },
+            'layout': { 'visibility': 'none' }
+        });
+
+        // Fuente vectorial de edificios
+        map.addSource('edificios3d', {
+            type: 'vector',
+            tiles: [
+                'https://xyzserver.ntmaps.es/buildingparts/{z}/{x}/{y}.mvt'
+            ],
+            minzoom: 12,
+            maxzoom: 25
+        });
+
+        let colorDict = {};
+        let colorExpr = null;
+
+        fetch('IVS.geojson')
+          .then(response => response.json())
+          .then(data => {
+            data.features.forEach(f => {
+              colorDict[f.properties.REFCAT.toLowerCase()] = f.properties.class;
+            });
+
+            colorExpr = [
+              'match',
+              ['downcase', ['get', 'refcat']],
+              ...Object.entries(colorDict).flatMap(([refcat, clase]) => [
+                refcat,
+                clase === 'Muy baja' ? '#0000FF' :
+                clase === 'Baja' ? '#90EE90' :
+                clase === 'Moderada' ? '#FFFF00' :
+                clase === 'Alta' ? '#FFA500' :
+                clase === 'Muy alta' ? '#FF0000' :
+                '#808080'
+              ]),
+              '#808080'
+            ];
+          });
+
+        // Añade la capa de edificios 3D con color base gris
+        map.addLayer({
+          id: 'edificios3d-layer',
+          type: 'fill-extrusion',
+          source: 'edificios3d',
+          'source-layer': 'buildingparts', // Cambia si es necesario
+          minzoom: 15,
+          paint: {
+            'fill-extrusion-color': '#B0B0B0',
+            'fill-extrusion-height': [
+              '*',
+              ['coalesce', ['get', 'numberoffloorsaboveground'], 1],
+              3
+            ],
+            'fill-extrusion-base': 0,
+            'fill-extrusion-opacity': 0.8
+          },
+          layout: { visibility: 'visible' }
+        });
+
+        // Control del checkbox
+        document.getElementById('vulnerabilidadEdificios3D').addEventListener('change', function() {
+          if (this.checked && colorExpr) {
+            map.setPaintProperty('edificios3d-layer', 'fill-extrusion-color', colorExpr);
+            document.getElementById('legend-ivs').style.display = 'block';
+          } else {
+            map.setPaintProperty('edificios3d-layer', 'fill-extrusion-color', '#B0B0B0');
+            document.getElementById('legend-ivs').style.display = 'none';
+          }
+        });
+
+        // Añadimos un listener para ver errores de carga
+        map.on('error', function(e) {
+            console.log('Map error:', e);
+        });
+
+        // Añadimos un listener para verificar cuando la fuente está cargada
+        map.on('sourcedata', function(e) {
+            if (e.sourceId === 'inundaciones2024' && e.isSourceLoaded) {
+                console.log('Fuente inundaciones2024 cargada');
+            }
+        });
+
+        // Control de capas con checkboxes
+        document.getElementById('pnoaLayerCheckbox').addEventListener('change', function() {
+            map.setLayoutProperty('pnoa-layer', 'visibility', this.checked ? 'visible' : 'none');
+        });
+
+        document.getElementById('osmLayerCheckbox').addEventListener('change', function() {
+            map.setLayoutProperty('osm-raster-layer', 'visibility', this.checked ? 'visible' : 'none');
+        });
+
+        document.getElementById('limitesMunicipalesLayer').addEventListener('change', function() {
+            const vis = this.checked ? 'visible' : 'none';
+            map.setLayoutProperty('limites-municipales-layer', 'visibility', vis);
+            map.setLayoutProperty('municipios-labels', 'visibility', vis);
+        });
+
+        document.getElementById('limitesProvincialesLayer').addEventListener('change', function() {
+            const vis = this.checked ? 'visible' : 'none';
+            map.setLayoutProperty('limites-provinciales-layer', 'visibility', vis);
+            map.setLayoutProperty('provinciales-labels', 'visibility', vis);
+        });
+
+        document.getElementById('inundacionesLayer').addEventListener('change', function() {
+            map.setLayoutProperty('inundacionesq100-layer', 'visibility', this.checked ? 'visible' : 'none');
+        });
+
+        document.getElementById('inundacionesLayer10').addEventListener('change', function() {
+            map.setLayoutProperty('inundacionesq10-layer', 'visibility', this.checked ? 'visible' : 'none');
+        });
+
+        document.getElementById('inundacionesLayer50').addEventListener('change', function() {
+            map.setLayoutProperty('inundacionesq50-layer', 'visibility', this.checked ? 'visible' : 'none');
+        });
+
+        document.getElementById('inundacionesLayer500').addEventListener('change', function() {
+            map.setLayoutProperty('inundacionesq500-layer', 'visibility', this.checked ? 'visible' : 'none');
+        });
+        document.getElementById('inundaciones2024Layer').addEventListener('change', function() {
+            const visibility = this.checked ? 'visible' : 'none';
+            map.setLayoutProperty('inundaciones2024-layer', 'visibility', visibility);
+            
+            // Mostrar u ocultar la leyenda
+            const legendContainer = document.getElementById('legend-container');
+            if (legendContainer) {
+                legendContainer.style.display = this.checked ? 'block' : 'none';
+            }
+
+            // Recargar la imagen de la leyenda cuando se activa
+            if (this.checked) {
+                const wmsLegend = document.getElementById('wmsLegend');
+                if (wmsLegend) {
+                    wmsLegend.src = wmsLegend.src + '&_=' + new Date().getTime();
+                }
+            }
+        });
+
+        // Manejar errores de carga de la leyenda
+        document.getElementById('wmsLegend').addEventListener('error', function() {
+            this.style.display = 'none';
+            const legendContent = this.parentElement;
+            if (legendContent) {
+                legendContent.innerHTML = '<div class="legend-item">' +
+                    '<div class="legend-color" style="background: rgba(0, 0, 255, 0.7);"></div>' +
+                    '<span>Área inundada DANA 2024</span>' +
+                    '</div>';
+            }
+        });
+
+        // Capa de vulnerabilidad social
+        fetch('parcelas_altura.geojson')
+            .then(response => response.json())
+            .then(data => {
+                console.log('Archivo cargado:', data);
+                console.log('Tipo:', data.type);
+                console.log('Número de features:', data.features ? data.features.length : 'No hay features');
+                
+                if (data.features && data.features.length > 0) {
+                    console.log('Primera feature:', data.features[0]);
+                    console.log('Propiedades:', data.features[0].properties);
+                    
+                    // Verificar todos los valores únicos en la columna 'class'
+                    const uniqueClasses = [...new Set(data.features.map(f => f.properties.class))];
+                    console.log('Valores únicos en columna class:', uniqueClasses);
+                    
+                    map.addSource('vulnerabilidad-social', {
+                        type: "geojson",
+                        data: data
+                    });
+                    
+                    map.addLayer({
+                        id: "vulnerabilidad-social-layer",
+                        type: "fill",
+                        source: "vulnerabilidad-social",
+                        layout: { visibility: 'none' },
+                        paint: {
+                            "fill-opacity": 0.7
+                        }
+                    });
+                } else {
+                    console.error('El archivo no tiene features válidas');
+                }
+            })
+            .catch(error => {
+                console.error('Error cargando el archivo:', error);
+            });
+
+        // Ordenar las capas de láminas de inundación
+        map.moveLayer('inundacionesq10-layer');
+        map.moveLayer('inundacionesq50-layer', 'inundacionesq10-layer');
+        map.moveLayer('inundacionesq100-layer', 'inundacionesq50-layer');
+        map.moveLayer('inundacionesq500-layer', 'inundacionesq100-layer');
+    });
+
+    map.on('click', function(e) {
+      const features = map.queryRenderedFeatures(e.point, { layers: ['edificios3d-layer'] });
+      if (features.length) {
+        console.log('Feature clicada:', features[0].properties);
+      } else {
+        console.log('No hay feature de edificios 3D aquí');
+      }
+    });
+
+    map.addControl(new Edificios3DControl(), 'top-right');
+
+    const controlsPanel = document.getElementById('controls');
+    const minimizeBtn = document.getElementById('minimizeLayersPanel');
+
+    // Estado para saber si está minimizado
+    let panelMinimizado = false;
+
+    minimizeBtn.addEventListener('click', function() {
+        panelMinimizado = !panelMinimizado;
+        if (panelMinimizado) {
+            // Minimiza: solo muestra el botón, oculta el resto
+            Array.from(controlsPanel.children).forEach(child => {
+                if (child !== minimizeBtn) child.style.display = 'none';
+            });
+            minimizeBtn.innerHTML = '☰'; // Cambia el icono a "menú"
+            minimizeBtn.title = 'Maximizar panel de capas';
+            controlsPanel.style.width = '48px';
+            controlsPanel.style.height = '48px';
+        } else {
+            // Maximiza: muestra todo
+            Array.from(controlsPanel.children).forEach(child => {
+                if (child !== minimizeBtn) child.style.display = '';
+            });
+            minimizeBtn.innerHTML = '–'; // Icono de minimizar
+            minimizeBtn.title = 'Minimizar panel de capas';
+            controlsPanel.style.width = '';
+            controlsPanel.style.height = '';
+        }
+    });
+
+    function actualizarLeyendaLaminas() {
+        const q10 = document.getElementById('inundacionesLayer10').checked;
+        const q50 = document.getElementById('inundacionesLayer50').checked;
+        const q100 = document.getElementById('inundacionesLayer').checked;
+        const q500 = document.getElementById('inundacionesLayer500').checked;
+        const leyenda = document.getElementById('legend-laminas');
+        if (q10 || q50 || q100 || q500) {
+            leyenda.style.display = 'block';
+        } else {
+            leyenda.style.display = 'none';
+        }
+    }
+
+    document.getElementById('inundacionesLayer10').addEventListener('change', actualizarLeyendaLaminas);
+    document.getElementById('inundacionesLayer50').addEventListener('change', actualizarLeyendaLaminas);
+    document.getElementById('inundacionesLayer').addEventListener('change', actualizarLeyendaLaminas);
+    document.getElementById('inundacionesLayer500').addEventListener('change', actualizarLeyendaLaminas);
+</script>
+
+</body>
+</html>
